@@ -1,0 +1,93 @@
+"""Test creating and publishing a knowledge article."""
+
+import os
+import sys
+import base64
+from pathlib import Path
+from dotenv import load_dotenv
+
+# Load environment variables - 正しいパスを指定
+env_path = Path(__file__).parent / "agent" / ".env"
+print(f"Loading .env from: {env_path}")
+load_dotenv(env_path)
+
+import requests
+
+# Get credentials
+instance_url = os.getenv("SERVICENOW_INSTANCE_URL")
+username = os.getenv("SERVICENOW_USERNAME")
+password = os.getenv("SERVICENOW_PASSWORD")
+
+print(f"Instance URL: {instance_url}")
+print(f"Username: {username}")
+print()
+
+if not all([instance_url, username, password]):
+    print("❌ Environment variables not loaded properly!")
+    print(f"   SERVICENOW_INSTANCE_URL: {instance_url}")
+    print(f"   SERVICENOW_USERNAME: {username}")
+    print(f"   SERVICENOW_PASSWORD: {'SET' if password else 'NOT SET'}")
+    sys.exit(1)
+
+# Encode credentials
+credentials = f"{username}:{password}"
+encoded_credentials = base64.b64encode(credentials.encode()).decode()
+
+headers = {
+    "Authorization": f"Basic {encoded_credentials}",
+    "Content-Type": "application/json",
+    "Accept": "application/json"
+}
+
+kb_table = "kb_knowledge"
+api_url = f"{instance_url}/api/now/table/{kb_table}"
+
+print("🔍 Test 1: Creating article in DRAFT state...")
+create_data = {
+    "short_description": "Test Article - Draft",
+    "text": "This is a test article in draft state",
+    "workflow_state": "draft"
+}
+
+response = requests.post(api_url, headers=headers, json=create_data, timeout=30)
+print(f"Status: {response.status_code}")
+
+if response.status_code == 201:
+    result = response.json().get("result", {})
+    sys_id = result.get("sys_id")
+    number = result.get("number")
+    print(f"✅ Created: {number} (sys_id: {sys_id})")
+    
+    # Test 2: Try to publish by updating
+    print(f"\n🔍 Test 2: Publishing article {number}...")
+    update_url = f"{api_url}/{sys_id}"
+    update_data = {"workflow_state": "published"}
+    
+    response = requests.patch(update_url, headers=headers, json=update_data, timeout=30)
+    print(f"Status: {response.status_code}")
+    
+    if response.status_code == 200:
+        print(f"✅ Published successfully!")
+    else:
+        print(f"❌ Failed to publish: {response.text}")
+        
+else:
+    print(f"❌ Failed to create: {response.text}")
+
+print("\n🔍 Test 3: Creating article DIRECTLY as PUBLISHED...")
+create_data_published = {
+    "short_description": "Test Article - Direct Publish",
+    "text": "This article is created directly as published",
+    "workflow_state": "published"
+}
+
+response = requests.post(api_url, headers=headers, json=create_data_published, timeout=30)
+print(f"Status: {response.status_code}")
+
+if response.status_code == 201:
+    result = response.json().get("result", {})
+    number = result.get("number")
+    state = result.get("workflow_state")
+    print(f"✅ Created: {number} with state: {state}")
+else:
+    print(f"❌ Failed: {response.text}")
